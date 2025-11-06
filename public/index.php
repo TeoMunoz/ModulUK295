@@ -13,5 +13,6 @@ $app->addErrorMiddleware(true, true, true);
 $app->setBasePath("/Modul295");
 
 (require __DIR__ . '/../src/routes/authRoutes.php')($app);
+(require __DIR__ . '/../src/routes/productsRoutes.php')($app);
 
 $app->run();
