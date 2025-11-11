@@ -1,4 +1,9 @@
 <?php
+
+/**
+ * @OA\Info(title="Online Schop API 295", version="1")
+ */
+
 use Slim\Factory\AppFactory;
 use Slim\Routing\RouteCollectorProxy;
 
@@ -14,5 +19,6 @@ $app->setBasePath("/Modul295");
 
 (require __DIR__ . '/../src/routes/authRoutes.php')($app);
 (require __DIR__ . '/../src/routes/productsRoutes.php')($app);
+(require __DIR__ . '/../src/routes/categoryRoutes.php')($app);
 
 $app->run();

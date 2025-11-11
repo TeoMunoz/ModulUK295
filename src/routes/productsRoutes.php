@@ -6,7 +6,24 @@ return function ($app) {
 
     $app->group('/products', function (RouteCollectorProxy $group) {
 
-        //GET products
+        /**
+        * @OA\Get(
+        *   path="/products {products}",
+        *   summary="you see a list of all existing products",
+        *   tags={"list products"},
+        *   @OA\Parameter(
+        *       name="products",
+        *       in="path",
+        *       required=true,
+        *       description="the products available in the store",
+        *       @OA\Schema(
+        *           type="string",
+        *           example="Monitor"
+        *       )
+        *   ),
+        *   @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"))
+        *   @OA\Response(response="404", description="Not found"))
+        */
         $group->get('', function ($request, $response) {
             require_once __DIR__ . '/../config/database.php';
 
@@ -21,7 +38,29 @@ return function ($app) {
             return $response->withHeader('Content-Type', 'application/json');
         });
 
-        //POST products
+    /**
+     * @OA\Post(
+     *     path="/products",
+     *     summary="you can create a new product",
+     *     tags={"create product"},
+     *     requestBody=@OA\RequestBody(
+     *         request="/products",
+     *         required=true,
+     *         description="products",
+     *         @OA\MediaType(
+     *             mediaType="application/json",
+     *             @OA\Schema(
+     *                 @OA\Property(property="name", type="string", example="Laptop"),
+     *                  @OA\Property(property="price", type="number", format="float", example=1000.90),
+     *                  @OA\Property(property="stock", type="integer", example=10)
+     *                  )
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(response="200", description="Created product"))
+     *     @OA\Response(response="400", description="Missing required fields"))
+     * )
+    */
         $group->post('', function ($request, $response) {
             require_once __DIR__ . '/../config/database.php';
 
@@ -51,7 +90,25 @@ return function ($app) {
             return $response->withHeader('Content-Type', 'application/json');
         });
 
-        //GET /products/{id}
+        /**
+             * @OA\Get(
+             *     path="/products/{id}",
+             *     summary="search for a product by its ID",
+             *     tags={"search ID"},
+             *     @OA\Parameter(
+             *         name="id",
+             *         in="/{id}",
+             *         required=true,
+             *         description="Each product has an ID and is unique",
+             *         @OA\Schema(
+             *             type="int",
+             *             example="1"
+             *         )
+             *     ),
+             *     @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"))
+             *     @OA\Response(response="400", description="invalid input"))
+             *     @OA\Response(response="404", description="Not found"))
+         */
         $group->get('/{id}', function ($request, $response, $args) {
             require_once __DIR__ . '/../config/database.php';
 
@@ -110,7 +167,39 @@ return function ($app) {
             return $response->withHeader('Content-Type', 'application/json');
         }
 
-        // Update Product
+        /**
+             * @OA\Put(
+             *     path="/products/{1}",
+             *     summary="update an existing product",
+             *     tags={"Update prosuct},
+             *     @OA\Parameter(
+             *         name="id",
+             *         in="/{1}",
+             *         required=true,
+             *         description="Each product has an ID and is unique",
+             *         @OA\Schema(
+             *             type="int",
+             *             example="1"
+             *         )
+             *     ),
+             *     requestBody=@OA\RequestBody(
+             *         request="/products/{1}",
+             *         required=true,
+             *         description="all product information such as name, price, ID, etc",
+             *         @OA\MediaType(
+             *             mediaType="application/json",
+             *             @OA\Schema(
+             *              @OA\Property(property="name", type="string", example="Laptop"),
+             *              @OA\Property(property="price", type="number", format="float", example=1000.90),
+             *              @OA\Property(property="stock", type="integer", example=10)
+             *             )
+             *         )
+             *     ),
+             *     @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"))
+             *     @OA\Response(response="400", description="invalid input"))
+             *     @OA\Response(response="404", description="Not found"))
+             * )
+        */
         $stmt = $conn->prepare("
             UPDATE products 
             SET name = :name, price = :price, stock = :stock
@@ -132,7 +221,26 @@ return function ($app) {
         return $response->withHeader('Content-Type', 'application/json');
     });
 
-    // DELETE /products/{id}
+    /**
+         * @OA\Delete(
+         *     path="/products/{1}",
+         *     summary="delete an existing product)",
+         *     tags={"Delete prosuct"},
+         *     @OA\Parameter(
+         *         name="ID",
+         *         in="/{1}",
+         *         required=true,
+         *         description="Each product has an ID and is unique",
+         *         @OA\Schema(
+         *             type="int",
+         *             example="1"
+         *         )
+         *     ),
+         *          @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"))
+         *          @OA\Response(response="400", description="invalid input"))
+         *          @OA\Response(response="404", description="Not found"))
+         * )
+    */
     $group->delete('/{id}', function ($request, $response, $args) {
         require_once __DIR__ . '/../config/database.php';
 
