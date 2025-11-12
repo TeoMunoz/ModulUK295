@@ -8,11 +8,11 @@ return function ($app) {
 
         /**
         * @OA\Get(
-        *   path="/products {products}",
+        *   path="/products",
         *   summary="you see a list of all existing products",
         *   tags={"list products"},
         *   @OA\Parameter(
-        *       name="products",
+        *       name="",
         *       in="path",
         *       required=true,
         *       description="the products available in the store",
@@ -21,8 +21,8 @@ return function ($app) {
         *           example="Monitor"
         *       )
         *   ),
-        *   @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"))
-        *   @OA\Response(response="404", description="Not found"))
+        *   @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"),
+        *   @OA\Response(response="404", description="Not found")
         */
         $group->get('', function ($request, $response) {
             require_once __DIR__ . '/../config/database.php';
@@ -57,8 +57,8 @@ return function ($app) {
      *             )
      *         )
      *     ),
-     *     @OA\Response(response="200", description="Created product"))
-     *     @OA\Response(response="400", description="Missing required fields"))
+     *     @OA\Response(response="201", description="Created product"),
+     *     @OA\Response(response="400", description="Missing required fields")
      * )
     */
         $group->post('', function ($request, $response) {
@@ -80,8 +80,21 @@ return function ($app) {
             $price = $data['price'];
             $stock = $data['stock'] ?? 0;
 
-            $stmt = $conn->prepare("INSERT INTO products (name, price, stock) VALUES (?, ?, ?)");
-            $stmt->execute([$name, $price, $stock]);
+            $stmt = $conn->prepare("
+                INSERT INTO products (sku, active, id_category, name, image, description, price, stock)
+                VALUES (:sku, :active, :id_category, :name, :image, :description, :price, :stock)
+            ");
+
+            $stmt->execute([
+                ':sku' => $data['sku'] ?? null,
+                ':active' => $data['active'] ?? 1,
+                ':id_category' => $data['id_category'] ?? null,
+                ':name' => $data['name'],
+                ':image' => $data['image'] ?? null,
+                ':description' => $data['description'] ?? null,
+                ':price' => $data['price'],
+                ':stock' => $data['stock'] ?? 0
+            ]);
 
             $response->getBody()->write(json_encode([
                 'message' => 'Product created successfully'
@@ -92,33 +105,33 @@ return function ($app) {
 
         /**
              * @OA\Get(
-             *     path="/products/{id}",
+             *     path="/products/{product_id}",
              *     summary="search for a product by its ID",
              *     tags={"search ID"},
              *     @OA\Parameter(
-             *         name="id",
-             *         in="/{id}",
+             *         name="product_id",
+             *         in="path",
              *         required=true,
              *         description="Each product has an ID and is unique",
              *         @OA\Schema(
-             *             type="int",
+             *             type="integer",
              *             example="1"
              *         )
              *     ),
-             *     @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"))
-             *     @OA\Response(response="400", description="invalid input"))
-             *     @OA\Response(response="404", description="Not found"))
+             *     @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"),
+             *     @OA\Response(response="400", description="invalid input"),
+             *     @OA\Response(response="404", description="Not found")
          */
-        $group->get('/{id}', function ($request, $response, $args) {
+        $group->get('/{product_id}', function ($request, $response, $args) {
             require_once __DIR__ . '/../config/database.php';
 
             $db = new Database();
             $conn = $db->connect();
 
-            $id = $args['id'];
+            $id = $args['product_id'];
 
-            $stmt = $conn->prepare("SELECT * FROM products WHERE id = :id");
-            $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+            $stmt = $conn->prepare("SELECT * FROM products WHERE product_id = :product_id");
+            $stmt->bindParam(':product_id', $id, PDO::PARAM_INT);
             $stmt->execute();
 
             $product = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -136,13 +149,13 @@ return function ($app) {
         });
 
         //PUT products/{id}
-        $group->put('/{id}', function ($request, $response, $args) {
+        $group->put('/{product_id}', function ($request, $response, $args) {
         require_once __DIR__ . '/../config/database.php';
 
         $db = new Database();
         $conn = $db->connect();
 
-        $id = $args['id'];
+        $id = $args['product_id'];
         $data = $request->getParsedBody();
 
         // Validate
@@ -155,8 +168,8 @@ return function ($app) {
     }
 
         // Product exist
-        $stmt = $conn->prepare("SELECT * FROM products WHERE id = :id");
-        $stmt->bindParam(':id', $id);
+        $stmt = $conn->prepare("SELECT * FROM products WHERE product_id = :product_id");
+        $stmt->bindParam(':product_id', $id);
         $stmt->execute();
 
         if ($stmt->rowCount() === 0) {
@@ -169,21 +182,21 @@ return function ($app) {
 
         /**
              * @OA\Put(
-             *     path="/products/{1}",
+             *     path="/products/{product_id}",
              *     summary="update an existing product",
-             *     tags={"Update prosuct},
+             *     tags={"Update prosuct"},
              *     @OA\Parameter(
-             *         name="id",
-             *         in="/{1}",
+             *         name="product_id",
+             *         in="path",
              *         required=true,
              *         description="Each product has an ID and is unique",
              *         @OA\Schema(
-             *             type="int",
+             *             type="integer",
              *             example="1"
              *         )
              *     ),
              *     requestBody=@OA\RequestBody(
-             *         request="/products/{1}",
+             *         request="/products/{product_id}",
              *         required=true,
              *         description="all product information such as name, price, ID, etc",
              *         @OA\MediaType(
@@ -195,62 +208,75 @@ return function ($app) {
              *             )
              *         )
              *     ),
-             *     @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"))
-             *     @OA\Response(response="400", description="invalid input"))
-             *     @OA\Response(response="404", description="Not found"))
+             *     @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"),
+             *     @OA\Response(response="400", description="invalid input"),
+             *     @OA\Response(response="404", description="Not found")
              * )
         */
         $stmt = $conn->prepare("
-            UPDATE products 
-            SET name = :name, price = :price, stock = :stock
-            WHERE id = :id
+            UPDATE products
+            SET 
+                sku = :sku,
+                active = :active,
+                id_category = :id_category,
+                name = :name,
+                image = :image,
+                description = :description,
+                price = :price,
+                stock = :stock
+            WHERE product_id = :id
         ");
 
-        $stmt->bindParam(':name', $data['name']);
-        $stmt->bindParam(':price', $data['price']);
-        $stmt->bindParam(':stock', $data['stock']);
-        $stmt->bindParam(':id', $id);
-
-        $stmt->execute();
+        $stmt->execute([
+            ':sku' => $data['sku'] ?? null,
+            ':active' => $data['active'] ?? 1,
+            ':id_category' => $data['id_category'] ?? null,
+            ':name' => $data['name'],
+            ':image' => $data['image'] ?? null,
+            ':description' => $data['description'] ?? null,
+            ':price' => $data['price'],
+            ':stock' => $data['stock'] ?? 0,
+            ':id' => $id
+        ]);
 
         $response->getBody()->write(json_encode([
             "message" => "Product updated successfully",
-            "id" => $id
+            "product_id" => $id
         ]));
 
-        return $response->withHeader('Content-Type', 'application/json');
+return $response->withHeader('Content-Type', 'application/json');
     });
 
     /**
          * @OA\Delete(
-         *     path="/products/{1}",
+         *     path="/products/{product_id}",
          *     summary="delete an existing product)",
          *     tags={"Delete prosuct"},
          *     @OA\Parameter(
-         *         name="ID",
-         *         in="/{1}",
+         *         name="product_id",
+         *         in="path",
          *         required=true,
          *         description="Each product has an ID and is unique",
          *         @OA\Schema(
-         *             type="int",
+         *             type="integer",
          *             example="1"
          *         )
          *     ),
-         *          @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"))
-         *          @OA\Response(response="400", description="invalid input"))
-         *          @OA\Response(response="404", description="Not found"))
+         *          @OA\Response(response="200", description="Erklärung der Antwort mit Status 200"),
+         *          @OA\Response(response="400", description="invalid input"),
+         *          @OA\Response(response="404", description="Not found")
          * )
     */
-    $group->delete('/{id}', function ($request, $response, $args) {
+    $group->delete('/{product_id}', function ($request, $response, $args) {
         require_once __DIR__ . '/../config/database.php';
 
         $db = new Database();
         $conn = $db->connect();
 
-        $id = intval($args['id']);
+        $id = intval($args['product_id']);
 
         // Exist
-        $check = $conn->prepare("SELECT * FROM products WHERE id = ?");
+        $check = $conn->prepare("SELECT * FROM products WHERE product_id = ?");
         $check->execute([$id]);
 
         if ($check->rowCount() === 0) {
@@ -259,7 +285,7 @@ return function ($app) {
         }
 
         // Delete
-        $stmt = $conn->prepare("DELETE FROM products WHERE id = ?");
+        $stmt = $conn->prepare("DELETE FROM products WHERE product_id = ?");
         $stmt->execute([$id]);
 
         $response->getBody()->write(json_encode(['message' => 'Product deleted']));

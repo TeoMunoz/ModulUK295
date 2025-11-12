@@ -7,7 +7,7 @@
 namespace OpenApi\Processors;
 
 use OpenApi\Analysis;
-use OpenApi\Annotations\Operation;
+use OpenApi\Annotations as OA;
 use OpenApi\Generator;
 
 /**
@@ -15,11 +15,8 @@ use OpenApi\Generator;
  */
 class OperationId
 {
-    protected $hash;
+    protected bool $hash;
 
-    /**
-     * @param bool $hash if `true` hash generated ids instead of clear text
-     */
     public function __construct(bool $hash = true)
     {
         $this->hash = $hash;
@@ -30,6 +27,9 @@ class OperationId
         return $this->hash;
     }
 
+    /**
+     *  If set to <code>true</code> generate ids (md5) instead of clear text operation ids.
+     */
     public function setHash(bool $hash): OperationId
     {
         $this->hash = $hash;
@@ -37,30 +37,35 @@ class OperationId
         return $this;
     }
 
-    public function __invoke(Analysis $analysis)
+    public function __invoke(Analysis $analysis): void
     {
-        $allOperations = $analysis->getAnnotationsOfType(Operation::class);
+        $allOperations = $analysis->getAnnotationsOfType(OA\Operation::class);
 
-        /** @var Operation $operation */
+        /** @var OA\Operation $operation */
         foreach ($allOperations as $operation) {
-            if ($operation->operationId !== Generator::UNDEFINED) {
+            if (null === $operation->operationId) {
+                $operation->operationId = Generator::UNDEFINED;
+            }
+
+            if (!Generator::isDefault($operation->operationId)) {
                 continue;
             }
+
             $context = $operation->_context;
-            if ($context && $context->method) {
+            if ($context) {
                 $source = $context->class ?? $context->interface ?? $context->trait;
                 $operationId = null;
                 if ($source) {
-                    if ($context->namespace) {
-                        $operationId = $context->namespace . '\\' . $source . '::' . $context->method;
-                    } else {
-                        $operationId = $source . '::' . $context->method;
-                    }
-                } else {
+                    $method = $context->method ? ('::' . $context->method) : '';
+                    $operationId = $context->namespace ? $context->namespace . '\\' . $source . $method : $source . $method;
+                } elseif ($context->method) {
                     $operationId = $context->method;
                 }
-                $operationId = strtoupper($operation->method) . '::' . $operation->path . '::' . $operationId;
-                $operation->operationId = $this->hash ? md5($operationId) : $operationId;
+
+                if ($operationId) {
+                    $operationId = strtoupper($operation->method) . '::' . $operation->path . '::' . $operationId;
+                    $operation->operationId = $this->hash ? md5($operationId) : $operationId;
+                }
             }
         }
     }

@@ -6,11 +6,12 @@
 
 namespace OpenApi;
 
-use InvalidArgumentException;
 use Symfony\Component\Finder\Finder;
 
 /**
  * Convenient utility functions that don't neatly fit anywhere else.
+ *
+ * @deprecated
  */
 class Util
 {
@@ -22,7 +23,7 @@ class Util
      * is always a chance it was a valid relative path to begin with.
      *
      * It should be noted that these are "relative paths" primarily in Finder's sense of them,
-     * and conform specifically to what is expected by functions like `exclude()` and `notPath()`.
+     * and conform specifically to what is expected by functions like <code>exclude()</code> and <code>notPath()</code>.
      * In particular, leading and trailing slashes are removed.
      *
      * @param array|string $basePaths
@@ -35,13 +36,13 @@ class Util
         } else { // an array of paths
             foreach ($basePaths as $basePath) {
                 $relativePath = self::removePrefix($fullPath, $basePath);
-                if (!empty($relativePath)) {
+                if (!in_array($relativePath, [null, '', '0'], true)) {
                     break;
                 }
             }
         }
 
-        return !empty($relativePath) ? trim($relativePath, '/') : $fullPath;
+        return in_array($relativePath, [null, '', '0'], true) ? $fullPath : trim($relativePath, '/');
     }
 
     /**
@@ -49,7 +50,7 @@ class Util
      */
     private static function removePrefix(string $str, string $prefix): ?string
     {
-        if (substr($str, 0, strlen($prefix)) == $prefix) {
+        if (substr($str, 0, strlen($prefix)) === $prefix) {
             return substr($str, strlen($prefix));
         }
 
@@ -63,7 +64,7 @@ class Util
      * @param null|array|string   $exclude   The directory(s) or filename(s) to exclude (as absolute or relative paths)
      * @param null|string         $pattern   The pattern of the files to scan
      *
-     * @throws InvalidArgumentException
+     * @throws \InvalidArgumentException
      */
     public static function finder($directory, $exclude = null, $pattern = null): Finder
     {
@@ -94,7 +95,7 @@ class Util
                 }
             }
         } else {
-            throw new InvalidArgumentException('Unexpected $directory value:' . gettype($directory));
+            throw new OpenApiException('Unexpected $directory value:' . gettype($directory));
         }
         if ($exclude !== null) {
             if (is_string($exclude)) {
@@ -104,7 +105,7 @@ class Util
                     $finder->notPath(Util::getRelativePath($path, $directory));
                 }
             } else {
-                throw new InvalidArgumentException('Unexpected $exclude value:' . gettype($exclude));
+                throw new OpenApiException('Unexpected $exclude value:' . gettype($exclude));
             }
         }
 
@@ -144,7 +145,10 @@ class Util
     {
         $short = [];
         foreach ((array) $classes as $class) {
-            $short[] = '@' . str_replace('OpenApi\\Annotations\\', 'OA\\', $class);
+            $short[] = '@' . str_replace([
+                'OpenApi\\Annotations\\',
+                'OpenApi\\Attributes\\',
+                ], 'OA\\', $class);
         }
 
         return is_array($classes) ? $short : array_pop($short);

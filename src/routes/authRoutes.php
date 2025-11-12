@@ -28,8 +28,8 @@ return function ($app) {
          *              )
          *            )
          *          ),
-         *          @OA\Response(response="200", description="Login successful"))
-         *          @OA\Response(response="401", description="Invalid credentials"))
+         *          @OA\Response(response="200", description="Login successful"),
+         *          @OA\Response(response="401", description="Invalid credentials")
          * )
         */
         $group->post('/login', function ($request, $response) {

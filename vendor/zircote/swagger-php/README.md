@@ -1,32 +1,74 @@
-[![Build Status](https://img.shields.io/github/workflow/status/zircote/swagger-php/build?style=flat-square)](https://github.com/zircote/swagger-php/actions?query=workflow:build)
-[![Total Downloads](https://img.shields.io/packagist/dt/zircote/swagger-php.svg?style=flat-square)](https://packagist.org/packages/zircote/swagger-php)
-[![License](https://img.shields.io/badge/license-Apache2.0-blue.svg?style=flat-square)](LICENSE-2.0.txt)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/zircote/swagger-php/build.yml?branch=master)](https://github.com/zircote/swagger-php/actions?query=workflow:build)
+[![Total Downloads](https://img.shields.io/packagist/dt/zircote/swagger-php.svg)](https://packagist.org/packages/zircote/swagger-php)
+[![License](https://img.shields.io/badge/license-Apache2.0-blue.svg)](LICENSE)
 
 # swagger-php
 
-Generate interactive [OpenAPI](https://www.openapis.org) documentation for your RESTful API using [doctrine annotations](https://www.doctrine-project.org/projects/doctrine-annotations/en/latest/index.html).
+Generate interactive [OpenAPI](https://www.openapis.org) documentation for your RESTful API using [PHP attributes](https://www.php.net/manual/en/language.attributes.overview.php) (preferred) or
+[doctrine annotations](https://www.doctrine-project.org/projects/annotations.html) (requires additional `doctrine/annotations` library).
 
-For a full list of supported annotations, please have look at the [`OpenApi\Annotations` namespace](src/Annotations) or the [documentation website](https://zircote.github.io/swagger-php/Supported-annotations.html).
+See the [documentation website](https://zircote.github.io/swagger-php/guide/using-attributes.html) for supported attributes and annotations.
+
+Annotations are deprecated and may be removed in a future release of swagger-php.
 
 ## Features
 
-- Compatible with the OpenAPI 3.0 specification.
-- Extracts information from code & existing phpdoc annotations.
+- Compatible with the OpenAPI **3.0** and **3.1** specification.
+- Extracts information from code and existing phpdoc annotations.
 - Command-line interface available.
 - [Documentation site](https://zircote.github.io/swagger-php/) with a getting started guide.
 - Exceptional error reporting (with hints, context)
+- As of PHP 8.1, all annotations are also available as PHP attributes
+
+## OpenAPI version support
+
+`swagger-php` allows to generate specs either for **OpenAPI 3.0.0** or **OpenAPI 3.1.0**.
+By default, the spec will be in version `3.0.0`. The command line option `--version` may be used to change this
+to `3.1.0`.
+
+Programmatically, the method `Generator::setVersion()` can be used to change the version.
+
+## Requirements
+
+`swagger-php` requires at least PHP 7.4 for annotations and PHP 8.1 for using attributes.
 
 ## Installation (with [Composer](https://getcomposer.org))
 
-```bash
+```shell
 composer require zircote/swagger-php
 ```
 
-For cli usage from anywhere install swagger-php globally and make sure to place the `~/.composer/vendor/bin` directory in your PATH so the `openapi` executable can be located by your system.
+For cli usage from anywhere, install swagger-php globally and make sure to place the `~/.composer/vendor/bin` directory in your PATH so the `openapi` executable can be located by your system.
 
-```bash
+```shell
 composer global require zircote/swagger-php
 ```
+
+### radebatz/type-info-extras
+`swagger-php` version `5.5` introduces a new type resolver used internally to determine the schema type
+of properties (and other elements with a schema).
+
+By default, a custom `LegacyTypeResolver` is used. If you are on PHP 8.2 or higher,
+the `TypeInfoTypeResolver` can be used instead.
+For this the [radebatz/type-info-extras](https://github.com/DerManoMann/type-info-extras) package is required.
+Since it is optional, it needs to be installed manually. It will also add `symfony/type-info` as a dependency:
+
+```shell
+composer require radebatz/type-info-extras
+```
+
+If the library code is detected, `swagger-php` will automatically use it.
+Advantages are re-use of 3rd party code, better stability and compatibility with future PHP versions.
+
+### doctrine/annotations
+As of version `4.8` the [doctrine annotations](https://www.doctrine-project.org/projects/annotations.html) library **is optional** and **no longer installed by default**.
+
+If your code uses doctrine annotations you will need to install that library manually:
+
+```shell
+composer require doctrine/annotations
+```
+
 
 ## Usage
 
@@ -45,7 +87,7 @@ Add annotations to your php files.
  */
 ```
 
-Visit the [Documentation website](https://zircote.github.io/swagger-php/) for the [Getting started guide](https://zircote.github.io/swagger-php/Getting-started.html) or look at the [Examples directory](Examples/) for more examples.
+Visit the [Documentation website](https://zircote.github.io/swagger-php/) for the [Getting started guide](https://zircote.github.io/swagger-php/guide) or look at the [examples directory](docs/examples) for more examples.
 
 ### Usage from php
 
@@ -58,13 +100,13 @@ $openapi = \OpenApi\Generator::scan(['/path/to/project']);
 header('Content-Type: application/x-yaml');
 echo $openapi->toYaml();
 ```
-Documentation of how to use the `Generator` class can be found in the [Generator Migration](https://zircote.github.io/swagger-php/Generator-migration.html) guide.
+Documentation of how to use the `Generator` class can be found in the [Generator reference](https://zircote.github.io/swagger-php/reference/generator).
 
 ### Usage from the Command Line Interface
 
 The `openapi` command line interface can be used to generate the documentation to a static yaml/json file.
 
-```bash
+```shell
 ./vendor/bin/openapi --help
 ```
 
@@ -82,13 +124,7 @@ $openapi = $serializer->deserialize($jsonString, 'OpenApi\Annotations\OpenApi');
 echo $openapi->toJson();
 ```
 
-### Usage from [docker](https://docker.com)
-
-Generate the swagger documentation to a static json file.
-
-```
-docker run -v "$PWD":/app -it tico/swagger-php --help
-```
+## [Contributing](CONTRIBUTING.md)
 
 ## More on OpenApi & Swagger
 
@@ -96,34 +132,4 @@ docker run -v "$PWD":/app -it tico/swagger-php --help
 - https://www.openapis.org
 - [OpenApi Documentation](https://swagger.io/docs/)
 - [OpenApi Specification](http://swagger.io/specification/)
-- [Related projects](docs/Related-projects.md)
-
-## Contributing
-
-Feel free to submit [Github Issues](https://github.com/zircote/swagger-php/issues)
-or pull requests.
-
-The documentation website is build from the [docs](docs/) folder with [vuepress](https://vuepress.vuejs.org).
-
-Make sure pull requests pass [PHPUnit](https://phpunit.de/)
-and [PHP-CS-Fixer](https://github.com/FriendsOfPHP/PHP-CS-Fixer) (PSR-2) tests.
-
-### To run both unit tests and linting execute:
-```bash
-composer test
-```
-
-### Running unit tests only:
-```bash
-./bin/phpunit
-```
-
-### Running linting only:
-```bash
-composer lint
-```
-
-### To make `php-cs-fixer` fix linting errors:
-```bash
-composer cs
-```
+- [Related projects](docs/related-projects.md)

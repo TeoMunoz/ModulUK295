@@ -7,10 +7,11 @@
 namespace OpenApi\Annotations;
 
 /**
- * @Annotation
- *
  * A container for custom data to be attached to an annotation.
- * These will be ignored by swagger-php but can be used for custom processing.
+ *
+ * These will be ignored by `swagger-php` but can be used for custom processing.
+ *
+ * @Annotation
  */
 class Attachable extends AbstractAnnotation
 {
@@ -23,6 +24,7 @@ class Attachable extends AbstractAnnotation
         Contact::class,
         Delete::class,
         Discriminator::class,
+        Encoding::class,
         Examples::class,
         ExternalDocumentation::class,
         Flow::class,
@@ -41,6 +43,7 @@ class Attachable extends AbstractAnnotation
         Parameter::class,
         Patch::class,
         PathItem::class,
+        PathParameter::class,
         Post::class,
         Property::class,
         Put::class,
@@ -52,18 +55,18 @@ class Attachable extends AbstractAnnotation
         ServerVariable::class,
         Tag::class,
         Trace::class,
+        Webhook::class,
         Xml::class,
         XmlContent::class,
     ];
 
     /**
-     * Allows to type hint a specific parent annotation class.
+     * Allows to type-hint a specific parent annotation class.
      *
-     * Allows to implement custom annotations that are limited to a subset of potential parent
+     * Container to allow custom annotations that are limited to a subset of potential parent
      * annotation classes.
-     * This is most likely going to be a v4 (PHP 8.1) PHP attribute feature only.
      *
-     * @return array List of valid parent annotation classes. If `null`` the default nesting rules apply.
+     * @return array<class-string>|null List of valid parent annotation classes. If <code>null</code>, the default nesting rules apply.
      */
     public function allowedParents(): ?array
     {

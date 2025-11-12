@@ -6,92 +6,116 @@
 
 namespace OpenApi;
 
-use OpenApi\Annotations\OpenApi;
-use OpenApi\Logger\DefaultLogger;
+use OpenApi\Analysers\AnalyserInterface;
+use OpenApi\Analysers\AttributeAnnotationFactory;
+use OpenApi\Analysers\DocBlockAnnotationFactory;
+use OpenApi\Analysers\ReflectionAnalyser;
+use OpenApi\Annotations as OA;
+use OpenApi\Loggers\DefaultLogger;
+use OpenApi\Type\LegacyTypeResolver;
+use OpenApi\Type\TypeInfoTypeResolver;
 use Psr\Log\LoggerInterface;
+use Radebatz\TypeInfoExtras\TypeResolver\StringTypeResolver;
 
 /**
  * OpenApi spec generator.
  *
  * Scans PHP source code and generates OpenApi specifications from the found OpenApi annotations.
  *
- * This is an object oriented alternative to using the now deprecated `\OpenApi\scan()` function and
- * static class properties of the `Analyzer` and `Analysis` classes.
- *
- * The `aliases` property supersedes the `Analyser::$defaultImports`; `namespaces` maps to `Analysis::$whitelist`.
+ * This is an object-oriented alternative to using the now deprecated <code>\OpenApi\scan()</code> function and
+ * static class properties of the <code>Analyzer</code> and <code>Analysis</code> classes.
  */
 class Generator
 {
+    /**
+     * Allows Annotation classes to know the context of the annotation that is being processed.
+     */
+    public static ?Context $context = null;
+
     /** @var string Magic value to differentiate between null and undefined. */
     public const UNDEFINED = '@OA\Generator::UNDEFINED🙈';
 
-    /** @var array Map of namespace aliases to be supported by doctrine. */
-    protected $aliases = null;
+    /** @var array<string,string> */
+    public const DEFAULT_ALIASES = ['oa' => 'OpenApi\\Annotations'];
+    /** @var array<string> */
+    public const DEFAULT_NAMESPACES = ['OpenApi\\Annotations\\'];
 
-    /** @var array List of annotation namespaces to be autoloaded by doctrine. */
-    protected $namespaces = null;
+    /** @var array<string,string> Map of namespace aliases to be supported by doctrine. */
+    protected array $aliases;
 
-    /** @var StaticAnalyser The configured analyzer. */
-    protected $analyser;
+    /** @var array<string>|null List of annotation namespaces to be autoloaded by doctrine. */
+    protected ?array $namespaces;
 
-    /** @var null|callable[] List of configured processors. */
-    protected $processors = null;
+    protected ?AnalyserInterface $analyser = null;
 
-    /** @var null|LoggerInterface PSR logger. */
-    protected $logger = null;
+    /** @var array<string,mixed> */
+    protected array $config = [];
 
-    private $configStack;
+    protected ?Pipeline $processorPipeline = null;
+
+    protected ?TypeResolverInterface $typeResolver = null;
+
+    protected ?LoggerInterface $logger = null;
+
+    /**
+     * OpenApi version override.
+     *
+     * If set, it will override the version set in the <code>OpenApi</code> annotation.
+     *
+     * Due to the order of processing, any conditional code using this (via <code>Context::$version</code>)
+     * must come only after the analysis is finished.
+     */
+    protected ?string $version = null;
 
     public function __construct(?LoggerInterface $logger = null)
     {
         $this->logger = $logger;
 
-        // kinda config stack to stay BC...
-        $this->configStack = new class() {
-            private $defaultImports;
-            private $whitelist;
-
-            public function push(Generator $generator): void
-            {
-                // save current state
-                $this->defaultImports = Analyser::$defaultImports;
-                $this->whitelist = Analyser::$whitelist;
-
-                // update state with generator config
-                Analyser::$defaultImports = $generator->getAliases();
-                Analyser::$whitelist = $generator->getNamespaces();
-            }
-
-            public function pop(): void
-            {
-                Analyser::$defaultImports = $this->defaultImports;
-                Analyser::$whitelist = $this->whitelist;
-            }
-        };
+        $this->setAliases(self::DEFAULT_ALIASES);
+        $this->setNamespaces(self::DEFAULT_NAMESPACES);
     }
 
+    public static function isDefault($value): bool
+    {
+        return $value === Generator::UNDEFINED;
+    }
+
+    /**
+     * @return array<string>
+     */
     public function getAliases(): array
     {
-        $aliases = null !== $this->aliases ? $this->aliases : Analyser::$defaultImports;
-        $aliases['oa'] = 'OpenApi\\Annotations';
-
-        return $aliases;
+        return $this->aliases;
     }
 
-    public function setAliases(?array $aliases): Generator
+    public function addAlias(string $alias, string $namespace): Generator
+    {
+        $this->aliases[$alias] = $namespace;
+
+        return $this;
+    }
+
+    public function setAliases(array $aliases): Generator
     {
         $this->aliases = $aliases;
 
         return $this;
     }
 
-    public function getNamespaces(): array
+    /**
+     * @return array<string>|null
+     */
+    public function getNamespaces(): ?array
     {
-        $namespaces = null !== $this->namespaces ? $this->namespaces : Analyser::$whitelist;
-        $namespaces = false !== $namespaces ? $namespaces : [];
-        $namespaces[] = 'OpenApi\\Annotations\\';
+        return $this->namespaces;
+    }
 
-        return $namespaces;
+    public function addNamespace(string $namespace): Generator
+    {
+        $namespaces = (array) $this->getNamespaces();
+        $namespaces[] = $namespace;
+
+        return $this->setNamespaces(array_unique($namespaces));
     }
 
     public function setNamespaces(?array $namespaces): Generator
@@ -101,126 +125,267 @@ class Generator
         return $this;
     }
 
-    public function getAnalyser(): StaticAnalyser
+    public function getAnalyser(): AnalyserInterface
     {
-        return $this->analyser ?: new StaticAnalyser();
+        $generatorConfig = $this->getConfig()['generator'];
+        $this->analyser = $this->analyser ?: new ReflectionAnalyser([
+            new AttributeAnnotationFactory($generatorConfig['ignoreOtherAttributes']),
+            new DocBlockAnnotationFactory(),
+        ]);
+        $this->analyser->setGenerator($this);
+
+        return $this->analyser;
     }
 
-    public function setAnalyser(?StaticAnalyser $analyser): Generator
+    public function setAnalyser(?AnalyserInterface $analyser): Generator
     {
         $this->analyser = $analyser;
 
         return $this;
     }
 
-    /**
-     * @return callable[]
-     */
-    public function getProcessors(): array
+    public function getDefaultConfig(): array
     {
-        return null !== $this->processors ? $this->processors : Analysis::processors();
+        return [
+            'generator' => [
+                'ignoreOtherAttributes' => false,
+            ],
+            'operationId' => [
+                'hash' => true,
+            ],
+        ];
     }
 
-    /**
-     * @param null|callable[] $processors
-     */
-    public function setProcessors(?array $processors): Generator
+    public function getConfig(): array
     {
-        $this->processors = $processors;
-
-        return $this;
+        return $this->config + $this->getDefaultConfig();
     }
 
-    public function addProcessor(callable $processor): Generator
+    protected function normaliseConfig(array $config): array
     {
-        $processors = $this->getProcessors();
-        $processors[] = $processor;
-        $this->setProcessors($processors);
-
-        return $this;
-    }
-
-    public function removeProcessor(callable $processor, bool $silent = false): Generator
-    {
-        $processors = $this->getProcessors();
-        if (false === ($key = array_search($processor, $processors, true))) {
-            if ($silent) {
-                return $this;
+        $normalised = [];
+        foreach ($config as $key => $value) {
+            if (is_numeric($key)) {
+                $token = explode('=', $value);
+                if (2 === count($token)) {
+                    // 'operationId.hash=false'
+                    [$key, $value] = $token;
+                }
             }
-            throw new \InvalidArgumentException('Processor not found');
+
+            if (in_array($value, ['true', 'false'])) {
+                $value = 'true' == $value;
+            }
+
+            if ($isList = ('[]' === substr($key, -2))) {
+                $key = substr($key, 0, -2);
+            }
+            $token = explode('.', $key);
+            if (2 === count($token)) {
+                // 'operationId.hash' => false
+                // namespaced / processor
+                if ($isList) {
+                    $normalised[$token[0]][$token[1]][] = $value;
+                } else {
+                    $normalised[$token[0]][$token[1]] = $value;
+                }
+            } else {
+                if ($isList) {
+                    $normalised[$key][] = $value;
+                } else {
+                    $normalised[$key] = $value;
+                }
+            }
         }
-        unset($processors[$key]);
-        $this->setProcessors($processors);
+
+        return $normalised;
+    }
+
+    /**
+     * Set generator and/or processor config.
+     *
+     * @param array<string,mixed> $config
+     */
+    public function setConfig(array $config): Generator
+    {
+        $this->config = $this->normaliseConfig($config) + $this->config;
+
+        return $this;
+    }
+
+    public function getProcessorPipeline(): Pipeline
+    {
+        if (!$this->processorPipeline instanceof Pipeline) {
+            $this->processorPipeline = new Pipeline([
+                new Processors\DocBlockDescriptions(),
+                new Processors\MergeIntoOpenApi(),
+                new Processors\MergeIntoComponents(),
+                new Processors\ExpandClasses(),
+                new Processors\ExpandInterfaces(),
+                new Processors\ExpandTraits(),
+                new Processors\ExpandEnums(),
+                new Processors\AugmentSchemas(),
+                new Processors\AugmentRequestBody(),
+                new Processors\AugmentProperties(),
+                new Processors\AugmentDiscriminators(),
+                new Processors\BuildPaths(),
+                new Processors\AugmentParameters(),
+                new Processors\AugmentRefs(),
+                new Processors\MergeJsonContent(),
+                new Processors\MergeXmlContent(),
+                new Processors\AugmentMediaType(),
+                new Processors\OperationId(),
+                new Processors\CleanUnmerged(),
+                new Processors\PathFilter(),
+                new Processors\CleanUnusedComponents(),
+                new Processors\AugmentTags(),
+            ]);
+        }
+
+        $config = $this->getConfig();
+        $walker = function (callable $pipe) use ($config): void {
+            $rc = new \ReflectionClass($pipe);
+
+            // apply config
+            $processorKey = lcfirst($rc->getShortName());
+            if (array_key_exists($processorKey, $config)) {
+                foreach ($config[$processorKey] as $name => $value) {
+                    $setter = 'set' . ucfirst($name);
+                    if (method_exists($pipe, $setter)) {
+                        $pipe->{$setter}($value);
+                    }
+                }
+            }
+
+            if (is_a($pipe, GeneratorAwareInterface::class)) {
+                $pipe->setGenerator($this);
+            }
+        };
+
+        return $this->processorPipeline->walk($walker);
+    }
+
+    public function setProcessorPipeline(?Pipeline $processor): Generator
+    {
+        $this->processorPipeline = $processor;
+
+        $walker = function (callable $pipe): void {
+            if (is_a($pipe, GeneratorAwareInterface::class)) {
+                $pipe->setGenerator($this);
+            }
+        };
+
+        if ($this->processorPipeline) {
+            $this->processorPipeline->walk($walker);
+        }
 
         return $this;
     }
 
     /**
-     * Update/replace an existing processor with a new one.
+     * Chainable method that allows to modify the processor pipeline.
      *
-     * @param callable      $processor the new processor
-     * @param null|callable $matcher   Optional matcher callable to identify the processor to replace.
-     *                                 If none given, matching is based on the processors class.
+     * @param callable $with callable with the current processor pipeline passed in
      */
-    public function updateProcessor(callable $processor, ?callable $matcher = null): Generator
+    public function withProcessorPipeline(callable $with): Generator
     {
-        if (!$matcher) {
-            $matcher = $matcher ?: function ($other) use ($processor) {
-                $otherClass = get_class($other);
-
-                return $processor instanceof $otherClass;
-            };
-        }
-
-        $processors = array_map(function ($other) use ($processor, $matcher) {
-            return $matcher($other) ? $processor : $other;
-        }, $this->getProcessors());
-        $this->setProcessors($processors);
+        $with($this->getProcessorPipeline());
 
         return $this;
+    }
+
+    /**
+     * @deprecated use `withProcessorPipeline()` instead
+     */
+    public function withProcessor(callable $with): Generator
+    {
+        return $this->withProcessorPipeline($with);
+    }
+
+    public function setTypeResolver(?TypeResolverInterface $typeResolver): Generator
+    {
+        $this->typeResolver = $typeResolver;
+
+        return $this;
+    }
+
+    public function getTypeResolver(): TypeResolverInterface
+    {
+        $this->typeResolver ??= class_exists(StringTypeResolver::class)
+                    ? new TypeInfoTypeResolver()
+                    : new LegacyTypeResolver();
+
+        return $this->typeResolver;
     }
 
     public function getLogger(): ?LoggerInterface
     {
-        return $this->logger ?: new DefaultLogger();
+        $this->logger ??= new DefaultLogger();
+
+        return $this->logger;
+    }
+
+    public function getVersion(): ?string
+    {
+        return $this->version;
+    }
+
+    public function setVersion(?string $version): Generator
+    {
+        $this->version = $version;
+
+        return $this;
     }
 
     /**
-     * Static  wrapper around `Generator::generate()`.
-     *
-     * @param iterable $sources PHP source files to scan.
-     *                          Supported sources:
-     *                          * string
-     *                          * \SplFileInfo
-     *                          * \Symfony\Component\Finder\Finder
-     * @param array    $options
-     *                          aliases:    null|array                    Defaults to `Analyser::$defaultImports`.
-     *                          namespaces: null|array                    Defaults to `Analyser::$whitelist`.
-     *                          analyser:   null|StaticAnalyser           Defaults to a new `StaticAnalyser`.
-     *                          analysis:   null|Analysis                 Defaults to a new `Analysis`.
-     *                          processors: null|array                    Defaults to `Analysis::processors()`.
-     *                          logger:     null|\Psr\Log\LoggerInterface If not set logging will use \OpenApi\Logger as before.
-     *                          validate:   bool                          Defaults to `true`.
+     * @deprecated use non-static `generate()` instead
      */
-    public static function scan(iterable $sources, array $options = []): OpenApi
+    public static function scan(iterable $sources, array $options = []): ?OA\OpenApi
     {
         // merge with defaults
         $config = $options + [
-                'aliases' => null,
-                'namespaces' => null,
+                'aliases' => self::DEFAULT_ALIASES,
+                'namespaces' => self::DEFAULT_NAMESPACES,
                 'analyser' => null,
                 'analysis' => null,
+                'processor' => null,
                 'processors' => null,
+                'config' => [],
                 'logger' => null,
                 'validate' => true,
+                'version' => null,
             ];
 
+        $processorPipeline = $config['processor'] ??
+            ($config['processors'] ? new Pipeline($config['processors']) : null);
+
         return (new Generator($config['logger']))
+            ->setVersion($config['version'])
             ->setAliases($config['aliases'])
             ->setNamespaces($config['namespaces'])
             ->setAnalyser($config['analyser'])
-            ->setProcessors($config['processors'])
+            ->setProcessorPipeline($processorPipeline)
+            ->setConfig($config['config'])
             ->generate($sources, $config['analysis'], $config['validate']);
+    }
+
+    /**
+     * Run code in the context of this generator.
+     *
+     * @param callable $callable Callable in the form of
+     *                           <code>function(Generator $generator, Analysis $analysis, Context $context): mixed</code>
+     *
+     * @return mixed the result of the <code>callable</code>
+     */
+    public function withContext(callable $callable)
+    {
+        $rootContext = new Context([
+            'version' => $this->getVersion(),
+            'logger' => $this->getLogger(),
+        ]);
+        $analysis = new Analysis([], $rootContext);
+
+        return $callable($this, $analysis, $rootContext);
     }
 
     /**
@@ -234,24 +399,31 @@ class Generator
      * @param null|Analysis $analysis custom analysis instance
      * @param bool          $validate flag to enable/disable validation of the returned spec
      */
-    public function generate(iterable $sources, ?Analysis $analysis = null, bool $validate = true): OpenApi
+    public function generate(iterable $sources, ?Analysis $analysis = null, bool $validate = true): ?OA\OpenApi
     {
-        $rootContext = new Context(['logger' => $this->getLogger()]);
+        $rootContext = new Context([
+            'version' => $this->getVersion(),
+            'logger' => $this->getLogger(),
+        ]);
+
         $analysis = $analysis ?: new Analysis([], $rootContext);
+        $analysis->context = $analysis->context ?: $rootContext;
 
-        $this->configStack->push($this);
-        try {
-            $this->scanSources($sources, $analysis, $rootContext);
+        $this->scanSources($sources, $analysis, $rootContext);
 
-            // post processing
-            $analysis->process($this->getProcessors());
+        // post-processing
+        $this->getProcessorPipeline()->process($analysis);
 
-            // validation
-            if ($validate) {
-                $analysis->validate();
-            }
-        } finally {
-            $this->configStack->pop();
+        if ($analysis->openapi) {
+            // overwrite default/annotated version
+            $analysis->openapi->openapi = $this->getVersion() ?: $analysis->openapi->openapi;
+            // update context to provide the same to validation/serialisation code
+            $rootContext->version = $analysis->openapi->openapi;
+        }
+
+        // validation
+        if ($validate) {
+            $analysis->validate();
         }
 
         return $analysis->openapi;
@@ -260,6 +432,7 @@ class Generator
     protected function scanSources(iterable $sources, Analysis $analysis, Context $rootContext): void
     {
         $analyser = $this->getAnalyser();
+
         foreach ($sources as $source) {
             if (is_iterable($source)) {
                 $this->scanSources($source, $analysis, $rootContext);
@@ -272,6 +445,7 @@ class Generator
                 if (is_dir($resolvedSource)) {
                     $this->scanSources(Util::finder($resolvedSource), $analysis, $rootContext);
                 } else {
+                    $rootContext->logger->debug(sprintf('Analysing source: %s', $resolvedSource));
                     $analysis->addAnalysis($analyser->fromFile($resolvedSource, $rootContext));
                 }
             }

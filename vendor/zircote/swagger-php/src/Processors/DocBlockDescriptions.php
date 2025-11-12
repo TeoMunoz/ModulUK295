@@ -7,41 +7,39 @@
 namespace OpenApi\Processors;
 
 use OpenApi\Analysis;
-use OpenApi\Annotations\AbstractAnnotation;
+use OpenApi\Annotations as OA;
 use OpenApi\Generator;
 
 /**
- * This would be detected as summary.
+ * Checks if the annotation has a summary and/or description property
+ * and uses the text in the comment block (above the annotations) as summary and/or description.
  *
- * And this would be detected
- * as the description.
+ * Use <code>null</code>, for example: <code>@Annotation(description=null)</code>, if you don't want the annotation to have a description.
  */
 class DocBlockDescriptions
 {
-    /**
-     * Checks if the annotation has a summary and/or description property
-     * and uses the text in the comment block (above the annotations) as summary and/or description.
-     *
-     * Use null `@Annotation(description=null)` if you don't want the annotation to have a description.
-     */
-    public function __invoke(Analysis $analysis)
+    use Concerns\DocblockTrait;
+
+    public function __invoke(Analysis $analysis): void
     {
-        /** @var AbstractAnnotation $annotation */
+        /** @var OA\AbstractAnnotation $annotation */
         foreach ($analysis->annotations as $annotation) {
             if (property_exists($annotation, '_context') === false) {
                 // only annotations with context
                 continue;
             }
-            $count = count($annotation->_context->annotations);
-            if (!$annotation->isRoot()) {
+
+            if (!$this->isDocblockRoot($annotation)) {
                 // only top-level annotations
                 continue;
             }
+
             $hasSummary = property_exists($annotation, 'summary');
             $hasDescription = property_exists($annotation, 'description');
             if (!$hasSummary && !$hasDescription) {
                 continue;
             }
+
             if ($hasSummary && $hasDescription) {
                 $this->summaryAndDescription($annotation);
             } elseif ($hasDescription) {
@@ -50,40 +48,52 @@ class DocBlockDescriptions
         }
     }
 
-    private function description($annotation): void
+    /**
+     * @param OA\Operation|OA\Property|OA\Parameter|OA\Schema $annotation
+     */
+    protected function description(OA\AbstractAnnotation $annotation): void
     {
-        if ($annotation->description !== Generator::UNDEFINED) {
+        if (!Generator::isDefault($annotation->description)) {
             if ($annotation->description === null) {
                 $annotation->description = Generator::UNDEFINED;
             }
 
             return;
         }
-        $annotation->description = $annotation->_context->phpdocContent();
+
+        $annotation->description = $this->parseDocblock($annotation->_context->comment);
     }
 
-    private function summaryAndDescription($annotation): void
+    /**
+     * @param OA\Operation|OA\Property|OA\Parameter|OA\Schema $annotation
+     */
+    protected function summaryAndDescription(OA\AbstractAnnotation $annotation): void
     {
-        $ignoreSummary = $annotation->summary !== Generator::UNDEFINED;
-        $ignoreDescription = $annotation->description !== Generator::UNDEFINED;
+        $ignoreSummary = !Generator::isDefault($annotation->summary);
+        $ignoreDescription = !Generator::isDefault($annotation->description);
+
         if ($annotation->summary === null) {
             $ignoreSummary = true;
             $annotation->summary = Generator::UNDEFINED;
         }
+
         if ($annotation->description === null) {
             $annotation->description = Generator::UNDEFINED;
             $ignoreDescription = true;
         }
+
         if ($ignoreSummary && $ignoreDescription) {
             return;
         }
+
+        $content = $this->parseDocblock($annotation->_context->comment);
         if ($ignoreSummary) {
-            $annotation->description = $annotation->_context->phpdocContent();
+            $annotation->description = $content;
         } elseif ($ignoreDescription) {
-            $annotation->summary = $annotation->_context->phpdocContent();
+            $annotation->summary = $content;
         } else {
-            $annotation->summary = $annotation->_context->phpdocSummary();
-            $annotation->description = $annotation->_context->phpdocDescription();
+            $annotation->summary = $this->extractCommentSummary($content);
+            $annotation->description = $this->extractCommentDescription($content);
         }
     }
 }
