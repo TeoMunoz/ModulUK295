@@ -30,6 +30,7 @@ return function ($app) {
             $db = new Database();
             $conn = $db->connect();
 
+            // Select the full content of products
             $stmt = $conn->prepare("SELECT * FROM products");
             $stmt->execute();
             $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -69,6 +70,7 @@ return function ($app) {
 
             $data = $request->getParsedBody();
 
+            //404 error if the product is not found
             if (!isset($data['name']) || !isset($data['price'])) {
                 $response->getBody()->write(json_encode([
                     'error' => 'name and price are required'
@@ -76,15 +78,12 @@ return function ($app) {
                 return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
             }
 
-            $name  = $data['name'];
-            $price = $data['price'];
-            $stock = $data['stock'] ?? 0;
-
             $stmt = $conn->prepare("
                 INSERT INTO products (sku, active, id_category, name, image, description, price, stock)
                 VALUES (:sku, :active, :id_category, :name, :image, :description, :price, :stock)
             ");
 
+            //information added to the created product
             $stmt->execute([
                 ':sku' => $data['sku'] ?? null,
                 ':active' => $data['active'] ?? 1,
@@ -130,12 +129,14 @@ return function ($app) {
 
             $id = $args['product_id'];
 
+            //select all products of the same id
             $stmt = $conn->prepare("SELECT * FROM products WHERE product_id = :product_id");
             $stmt->bindParam(':product_id', $id, PDO::PARAM_INT);
             $stmt->execute();
 
             $product = $stmt->fetch(PDO::FETCH_ASSOC);
 
+            //404 error if the product is not found
             if (!$product) {
                 $response = $response->withStatus(404);
                 $response->getBody()->write(json_encode([
@@ -227,6 +228,7 @@ return function ($app) {
             WHERE product_id = :id
         ");
 
+        //data for update
         $stmt->execute([
             ':sku' => $data['sku'] ?? null,
             ':active' => $data['active'] ?? 1,

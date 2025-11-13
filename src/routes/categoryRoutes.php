@@ -31,6 +31,7 @@ return function ($app) {
             $db = new Database();
             $conn = $db->connect();
 
+            //select all ifo from categrs
             $stmt = $conn->prepare("SELECT * FROM categories");
             $stmt->execute();
 
@@ -74,6 +75,7 @@ return function ($app) {
 
             $category = $stmt->fetch(PDO::FETCH_ASSOC);
 
+            //if dont exist error 404
             if (!$category) {
                 $response = $response->withStatus(404);
                 $response->getBody()->write(json_encode([
